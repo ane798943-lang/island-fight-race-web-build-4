@@ -1,0 +1,43 @@
+name: Build Island Fight Race web template (only what the game needs)
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [final, symbols]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.20
+      - run: pip install scons
+      - name: Get Godot 4.7.2-stable source
+        run: git clone --depth 1 --branch 4.7.2-stable https://github.com/godotengine/godot.git godot-src
+      - name: Copy the compilation profile (class selection from the Godot editor)
+        run: cp custom_engine/ifr_web.build godot-src/ifr_web.build
+      - name: Build (${{ matrix.variant }})
+        working-directory: godot-src
+        run: |
+          # "symbols" = the SAME engine plus function names, only to read a crash report. Never give it to players.
+          EXTRA="optimize=size_extra"
+          if [ "${{ matrix.variant }}" = "symbols" ]; then EXTRA="optimize=size_extra debug_symbols=yes"; fi
+          # WHITELIST: every engine module is OFF, only the modules Island Fight Race really uses are switched ON:
+          #   gdscript (scripts)            freetype + text_server_fb + svg (fonts, theme icons)
+          #   jolt_physics (cars)           ogg + vorbis (music / engine sounds)
+          #   websocket + mbedtls (online)  multiplayer (core node API)
+          #   jpg + webp (profile photo)    etcpak + astcenc + bcdec + squish (phone / desktop texture formats)
+          scons platform=web target=template_release threads=no dlink_enabled=no production=yes $EXTRA \
+            build_profile=ifr_web.build \
+            modules_enabled_by_default=no \
+            module_gdscript_enabled=yes module_freetype_enabled=yes module_text_server_fb_enabled=yes module_svg_enabled=yes \
+            module_jolt_physics_enabled=yes module_ogg_enabled=yes module_vorbis_enabled=yes \
+            module_websocket_enabled=yes module_mbedtls_enabled=yes module_multiplayer_enabled=yes \
+            module_jpg_enabled=yes module_webp_enabled=yes \
+            module_etcpak_enabled=yes module_astcenc_enabled=yes module_bcdec_enabled=yes module_squish_enabled=yes
+          ls -l bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-template-${{ matrix.variant }}
+          path: godot-src/bin/*.zip
